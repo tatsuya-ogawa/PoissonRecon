@@ -6,6 +6,7 @@ EH_TARGET=EDTInHeat
 IS_TARGET=ImageStitching
 AV_TARGET=AdaptiveTreeVisualization
 CP_TARGET=ChunkPLY
+LB_TARGET=PoissonReconLib
 PR_SOURCE=PoissonRecon.cpp
 SR_SOURCE=SSDRecon.cpp
 PI_SOURCE=PointInterpolant.cpp
@@ -14,6 +15,7 @@ EH_SOURCE=EDTInHeat.cpp
 IS_SOURCE=ImageStitching.cpp
 AV_SOURCE=AdaptiveTreeVisualization.cpp
 CP_SOURCE=ChunkPLY.cpp
+LB_SOURCE=PoissonReconLib.cpp
 
 ifeq ($(shell uname -s),Darwin)
 COMPILER ?= clang
@@ -73,7 +75,7 @@ EH_OBJECTS=$(addprefix $(BIN), $(addsuffix .o, $(basename $(EH_SOURCE))))
 IS_OBJECTS=$(addprefix $(BIN), $(addsuffix .o, $(basename $(IS_SOURCE))))
 AV_OBJECTS=$(addprefix $(BIN), $(addsuffix .o, $(basename $(AV_SOURCE))))
 CP_OBJECTS=$(addprefix $(BIN), $(addsuffix .o, $(basename $(CP_SOURCE))))
-
+LB_OBJECTS=$(addprefix $(BIN), $(addsuffix .o, $(basename $(LB_SOURCE))))
 
 all: CFLAGS += $(CFLAGS_RELEASE)
 all: LFLAGS += $(LFLAGS_RELEASE)
@@ -139,6 +141,11 @@ chunkply: LFLAGS += $(LFLAGS_RELEASE)
 chunkply: make_dir
 chunkply: $(BIN)$(CP_TARGET)
 
+lib: CFLAGS += $(CFLAGS_RELEASE)
+lib: LFLAGS += $(LFLAGS_RELEASE)
+lib: make_dir
+lib: $(BIN)$(LB_TARGET)
+
 clean:
 	rm -rf $(BIN)$(PR_TARGET)
 	rm -rf $(BIN)$(SR_TARGET)
@@ -191,6 +198,10 @@ $(BIN)$(AV_TARGET): $(AV_OBJECTS)
 $(BIN)$(CP_TARGET): $(CP_OBJECTS)
 	cd PNG  && make COMPILER=$(COMPILER)
 	$(CXX) -pthread -o $@ $(CP_OBJECTS) -L$(BIN) $(LFLAGS)
+
+$(BIN)$(LB_TARGET): $(LB_OBJECTS)
+	cd PNG  && make COMPILER=$(COMPILER)
+	$(CXX) -pthread -o $@ $(LB_OBJECTS) -L$(BIN) $(LFLAGS)
 
 $(BIN)%.o: $(SRC)%.c
 	$(CC) -c -o $@ -I$(INCLUDE) $<
