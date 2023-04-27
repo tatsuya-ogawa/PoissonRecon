@@ -70,6 +70,11 @@ const ParamBool ExactInterpolation;
 const Param<int> Threads={(int)std::thread::hardware_concurrency()};
 
 template< class Real , typename AuxDataFactory , unsigned int ... FEMSigs >
+class PoissonReconLib{
+	public:
+PoissonReconLib(UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory){
+
+}
 void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 {
     static const int Dim = sizeof ... ( FEMSigs );
@@ -657,4 +662,18 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 #endif
 	if( density ) delete density , density = NULL;
 	if( Verbose.set ) std::cout << "#          Total Solve: " << Time()-startTime << " (s), " << MemoryInfo::PeakMemoryUsageMB() << " (MB)" << std::endl;
+}
+};
+
+void entrypoint(){
+#ifdef USE_DOUBLE
+	typedef double Real;
+#else // !USE_DOUBLE
+	typedef float  Real;
+#endif // USE_DOUBLE
+	static const int Degree = DEFAULT_FEM_DEGREE;
+	static const BoundaryType BType = DEFAULT_FEM_BOUNDARY;
+	typedef IsotropicUIntPack< DEFAULT_DIMENSION , FEMDegreeAndBType< Degree , BType >::Signature > FEMSigs;
+	PoissonReconLib<Real,VertexFactory::RGBColorFactory< Real>,5U,5U,5U> lib(FEMSigs() , VertexFactory::RGBColorFactory< Real >());
+    // Execute< Real >( FEMSigs() , VertexFactory::RGBColorFactory< Real >());
 }
