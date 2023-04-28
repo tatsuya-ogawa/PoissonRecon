@@ -155,6 +155,7 @@ clean:
 	rm -rf $(BIN)$(IS_TARGET)
 	rm -rf $(BIN)$(AV_TARGET)
 	rm -rf $(BIN)$(CP_TARGET)
+	rm -rf $(BIN)$(LB_TARGET)
 	rm -rf $(PR_OBJECTS)
 	rm -rf $(SR_OBJECTS)
 	rm -rf $(PI_OBJECTS)
@@ -163,6 +164,7 @@ clean:
 	rm -rf $(IS_OBJECTS)
 	rm -rf $(AV_OBJECTS)
 	rm -rf $(CP_OBJECTS)
+	rm -rf $(LB_OBJECTS)
 	cd PNG  && make clean
 
 
@@ -201,6 +203,7 @@ $(BIN)$(CP_TARGET): $(CP_OBJECTS)
 
 $(BIN)$(LB_TARGET): $(LB_OBJECTS)
 	cd PNG  && make COMPILER=$(COMPILER)
+	cd JPEG  && make COMPILER=$(COMPILER)
 	$(CXX) -pthread -o $@ $(LB_OBJECTS) -L$(BIN) $(LFLAGS)
 
 $(BIN)%.o: $(SRC)%.c
