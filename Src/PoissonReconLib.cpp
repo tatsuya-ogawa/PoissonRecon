@@ -11,7 +11,7 @@
 #include "FEMTree.h"
 // #include "../Src/Ply.h"
 #include "VertexFactory.h"
-#include "Image.h"
+// #include "Image.h"
 #include "RegularGrid.h"
 using namespace VertexFactory;
 template< typename Data >

@@ -202,9 +202,7 @@ $(BIN)$(CP_TARGET): $(CP_OBJECTS)
 	$(CXX) -pthread -o $@ $(CP_OBJECTS) -L$(BIN) $(LFLAGS)
 
 $(BIN)$(LB_TARGET): $(LB_OBJECTS)
-	cd PNG  && make COMPILER=$(COMPILER)
-	cd JPEG  && make COMPILER=$(COMPILER)
-	$(CXX) -pthread -o $@ $(LB_OBJECTS) -L$(BIN) $(LFLAGS)
+	$(CXX) -o $@ $(LB_OBJECTS) -L$(BIN) 
 
 $(BIN)%.o: $(SRC)%.c
 	$(CC) -c -o $@ -I$(INCLUDE) $<
