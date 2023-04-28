@@ -1,4 +1,4 @@
-#include "../Src/PreProcessor.h"
+// #include "../Src/PreProcessor.h"
 #include "../Src/PoissonRecon.h"
 
 #include <stdio.h>
@@ -13,6 +13,41 @@
 #include "VertexFactory.h"
 #include "Image.h"
 #include "RegularGrid.h"
+
+template< typename Data >
+class VectorInputDataStream : public InputDataStream< Data >
+{
+	const std::vector<Data> _data;
+	size_t _size;
+	size_t _current;
+public:
+	VectorInputDataStream( const std::vector<Data> );
+	~VectorInputDataStream( void );
+	void reset( void );
+	bool next( Data &d );
+};
+template< typename Data >
+VectorInputDataStream< Data >::VectorInputDataStream( const std::vector<Data> data ) : _data(data) , _size(data.size()) , _current(0) {}
+template< typename Data >
+VectorInputDataStream< Data >::~VectorInputDataStream( void ){ ; }
+template< typename Data >
+void VectorInputDataStream< Data >::reset( void ) { _current=0; }
+template< typename Data >
+bool VectorInputDataStream< Data >::next( Data &d )
+{
+	if( _current>=_size ) return false;
+	d = _data[_current++];
+	return true;
+}
+template< typename VertexType,typename Index >
+class MeshOutputDataStream {
+    public:
+    virtual ~MeshOutputDataStream(){};
+    void set_vertex_num(size_t num);
+    void set_polygon_num(size_t num);
+    void push_vertex(VertexType& vertex);
+    void push_polygon_indices(std::vector<Index>& indice);
+};
 
 struct ParamBool {
     const bool set=false;
@@ -67,17 +102,168 @@ const ParamBool Grid;
 const ParamBool Tree;
 const ParamBool PrimalGrid;
 const ParamBool ExactInterpolation;
+const ParamBool LinearFit;
+const ParamBool NonManifold;
+const ParamBool PolygonMesh;
 const Param<int> Threads={(int)std::thread::hardware_concurrency()};
 
-template< class Real , typename AuxDataFactory , unsigned int ... FEMSigs >
+template< class Real ,typename Index ,typename AuxDataFactory , unsigned int ... FEMSigs >
 class PoissonReconLib{
+#ifndef NOLIB
+	static const int Dim = sizeof ... ( FEMSigs );
+#endif
+#ifndef NOLIB
+	// The input point stream information: First piece of data is the normal; the remainder is the auxiliary data
+	typedef InputOrientedPointStreamInfo< Real , Dim , typename AuxDataFactory::VertexType > InputPointStreamInfo;
+	// The type of the input sample
+	typedef typename InputPointStreamInfo::PointAndDataType InputSampleType;
+	// The type of the input sample's data
+	typedef typename InputPointStreamInfo::DataType InputSampleDataType;
+	typedef InputDataStream< InputSampleType >  InputPointStream;
+	typedef TransformedInputDataStream< InputSampleType > XInputPointStream;
+#endif
 	public:
-PoissonReconLib(UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory){
+template< typename VertexFactory ,typename OutputIndex , bool UseCharIndex >
+	void OutputPolygons(const VertexFactory &vFactory , StreamingMesh< typename VertexFactory::VertexType , Index >* mesh ,std::function< void ( typename VertexFactory::VertexType & ) > xForm,MeshOutputDataStream<typename VertexFactory::VertexType,Index>& output)
+	{
+        if( mesh->vertexNum()>(size_t)std::numeric_limits< OutputIndex >::max() )
+		{
+#if NOLIB
+			if( std::is_same< Index , OutputIndex >::value ) ERROR_OUT( "more vertices than can be represented using " , Traits< Index >::name );
+			WARN( "more vertices than can be represented using " , Traits< OutputIndex >::name , " using " , Traits< Index >::name , " instead" );
+			return WritePolygons< VertexFactory , Index , Real , Dim , Index >( fileName , vFactory , mesh , file_type , comments , xForm );
+#else
+			if( std::is_same< Index , OutputIndex >::value ) throw "more vertices than can be represented using ";
+			return WritePolygons< VertexFactory , Index , Real , Dim , Index >( vFactory , mesh, xForm );
+#endif
+		}
+		size_t nr_vertices = mesh->vertexNum();
+		size_t nr_faces = mesh->polygonNum();
+		float version;
+        output.set_vertex_num(mesh->vertexNum);
+        output.set_polygon_num(mesh->polygonNum);
+		mesh->resetIterator();
+		if( vFactory.isStaticallyAllocated() )
+		{
+			for( size_t i=0; i<mesh->vertexNum() ; i++ )
+			{
+				typename VertexFactory::VertexType vertex = vFactory();
+				mesh->nextVertex( vertex );
+				xForm( vertex );
+                output.push_vertex(vertex);
+			}
+		}
+		else
+		{
+			for( size_t i=0; i<mesh->vertexNum() ; i++ )
+			{
+				typename VertexFactory::VertexType vertex = vFactory();
+				mesh->nextVertex( vertex );
+				xForm( vertex );
+                output.push_vertex(vertex);
+			}
+		}
 
+	   // write faces
+		std::vector< Index > polygon;
+		for( size_t i=0 ; i<nr_faces ; i++ )
+		{
+			//
+			// create and fill a struct that the ply code can handle
+			//
+			mesh->nextPolygon( polygon );
+            output.push_polygon_indices(polygon);
+		}  // for, write faces
+    }
+template< typename SetVertexFunction , typename InputSampleDataType , typename VertexFactory>
+void ExtractMesh
+(
+	UIntPack< FEMSigs ... > ,
+	FEMTree< sizeof ... ( FEMSigs ) , Real >& tree ,
+	const DenseNodeData< Real , UIntPack< FEMSigs ... > >& solution ,
+	Real isoValue ,
+	const std::vector< typename FEMTree< sizeof ... ( FEMSigs ) , Real >::PointSample > *samples ,
+	std::vector< InputSampleDataType > *sampleData ,
+	const typename FEMTree< sizeof ... ( FEMSigs ) , Real >::template DensityEstimator< WEIGHT_DEGREE > *density ,
+	const VertexFactory &vertexFactory ,
+	const InputSampleDataType &zeroInputSampleDataType ,
+	SetVertexFunction SetVertex ,
+	std::vector< std::string > &comments ,
+	XForm< Real , sizeof...(FEMSigs)+1 > unitCubeToModel,
+    MeshOutputDataStream<typename VertexFactory::VertexType,Index>& output
+)
+{
+	static const int Dim = sizeof ... ( FEMSigs );
+	typedef UIntPack< FEMSigs ... > Sigs;
+	typedef typename VertexFactory::VertexType Vertex;
+
+	static const unsigned int DataSig = FEMDegreeAndBType< DATA_DEGREE , BOUNDARY_FREE >::Signature;
+	typedef typename FEMTree< Dim , Real >::template DensityEstimator< WEIGHT_DEGREE > DensityEstimator;
+
+	Profiler profiler(20);
+#ifdef NOLIB
+	char tempHeader[2048];
+	{
+		char tempPath[1024];
+		tempPath[0] = 0;
+		if( TempDir.set ) strcpy( tempPath , TempDir.value );
+		else SetTempDirectory( tempPath , sizeof(tempPath) );
+		if( strlen(tempPath)==0 ) sprintf( tempPath , ".%c" , FileSeparator );
+		if( tempPath[ strlen( tempPath )-1 ]==FileSeparator ) sprintf( tempHeader , "%sPR_" , tempPath );
+		else                                                  sprintf( tempHeader , "%s%cPR_" , tempPath , FileSeparator );
+	}
+	StreamingMesh< Vertex , node_index_type > *mesh;
+	if( InCore.set ) mesh = new VectorStreamingMesh< Vertex , node_index_type >();
+	else             mesh = new FileStreamingMesh< VertexFactory , node_index_type >( vertexFactory , tempHeader );
+#else
+    StreamingMesh< Vertex , Index > *mesh;
+    mesh = new VectorStreamingMesh< Vertex , Index >();
+#endif
+	profiler.reset();
+	typename LevelSetExtractor< Dim , Real , Vertex >::Stats stats;
+	if( sampleData )
+	{
+		SparseNodeData< ProjectiveData< InputSampleDataType , Real > , IsotropicUIntPack< Dim , DataSig > > _sampleData = tree.template setExtrapolatedDataField< DataSig , false >( *samples , *sampleData , (DensityEstimator*)NULL );
+		auto nodeFunctor = [&]( const RegularTreeNode< Dim , FEMTreeNodeData , depth_and_offset_type > *n )
+		{
+			ProjectiveData< InputSampleDataType , Real >* clr = _sampleData( n );
+			if( clr ) (*clr) *= (Real)pow( DataX.value , tree.depth( n ) );
+		};
+		tree.tree().processNodes( nodeFunctor );
+		stats = LevelSetExtractor< Dim , Real , Vertex >::template Extract< InputSampleDataType >( Sigs() , UIntPack< WEIGHT_DEGREE >() , UIntPack< DataSig >() , tree , density , &_sampleData , solution , isoValue , *mesh , zeroInputSampleDataType , SetVertex , !LinearFit.set , Normals.value==NORMALS_GRADIENTS , !NonManifold.set , PolygonMesh.set , false );
+	}
+#if defined( __GNUC__ ) && __GNUC__ < 5
+#ifdef SHOW_WARNINGS
+#warning "you've got me gcc version<5"
+#endif // SHOW_WARNINGS
+	else stats = LevelSetExtractor< Dim , Real , Vertex >::template Extract< InputSampleDataType >( Sigs() , UIntPack< WEIGHT_DEGREE >() , UIntPack< DataSig >() , tree , density , (SparseNodeData< ProjectiveData< InputSampleDataType , Real > , IsotropicUIntPack< Dim , DataSig > > *)NULL , solution , isoValue , *mesh , zeroInputSampleDataType , SetVertex , !LinearFit.set , Normals.value==NORMALS_GRADIENTS , !NonManifold.set , PolygonMesh.set , false );
+#else // !__GNUC__ || __GNUC__ >=5
+	else stats = LevelSetExtractor< Dim , Real , Vertex >::template Extract< InputSampleDataType >( Sigs() , UIntPack< WEIGHT_DEGREE >() , UIntPack< DataSig >() , tree , density , NULL , solution , isoValue , *mesh , zeroInputSampleDataType , SetVertex , !LinearFit.set , Normals.value==NORMALS_GRADIENTS , !NonManifold.set , PolygonMesh.set , false );
+#endif // __GNUC__ || __GNUC__ < 4
+	if( Verbose.set )
+	{
+		std::cout << "Vertices / Polygons: " << mesh->vertexNum() << " / " << mesh->polygonNum() << std::endl;
+		std::cout << stats.toString() << std::endl;
+		if( PolygonMesh.set ) std::cout << "#         Got polygons: " << profiler << std::endl;
+		else                  std::cout << "#        Got triangles: " << profiler << std::endl;
+	}
+
+	std::vector< std::string > noComments;
+	typename VertexFactory::Transform unitCubeToModelTransform( unitCubeToModel );
+	auto xForm = [&]( typename VertexFactory::VertexType & v ){ unitCubeToModelTransform.inPlace( v ); };
+#ifdef NOLIB
+	PLY::WritePolygons< VertexFactory , node_index_type , Real , Dim >( Out.value , vertexFactory , mesh , ASCII.set ? PLY_ASCII : PLY_BINARY_NATIVE , NoComments.set ? noComments : comments , xForm );
+#else
+	OutputPolygons< VertexFactory , Real , Dim >( vertexFactory , mesh , xForm ,output);
+#endif
+	delete mesh;
 }
+
 void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 {
+#ifdef NOLIB
     static const int Dim = sizeof ... ( FEMSigs );
+#endif
 	typedef UIntPack< FEMSigs ... > Sigs;
 	typedef UIntPack< FEMSignature< FEMSigs >::Degree ... > Degrees;
 	typedef UIntPack< FEMDegreeAndBType< NORMAL_DEGREE , DerivativeBoundary< FEMSignature< FEMSigs >::BType , 1 >::BType >::Signature ... > NormalSigs;
@@ -92,6 +278,7 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 	// The factory for constructing an input sample's data
 	typedef Factory< Real , NormalFactory< Real , Dim > , AuxDataFactory > InputSampleDataFactory;
 
+#ifdef NOLIB
 	// The input point stream information: First piece of data is the normal; the remainder is the auxiliary data
 	typedef InputOrientedPointStreamInfo< Real , Dim , typename AuxDataFactory::VertexType > InputPointStreamInfo;
 
@@ -103,7 +290,7 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 
 	typedef            InputDataStream< InputSampleType >  InputPointStream;
 	typedef TransformedInputDataStream< InputSampleType > XInputPointStream;
-
+#endif
 	InputSampleFactory inputSampleFactory( PositionFactory< Real , Dim >() , InputSampleDataFactory( NormalFactory< Real , Dim >() , auxDataFactory ) );
 	InputSampleDataFactory inputSampleDataFactory( NormalFactory< Real , Dim >() , auxDataFactory );
 
@@ -190,9 +377,9 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 		char* ext = GetFileExtension( In.value );
 #endif
 		sampleData = new std::vector< InputSampleDataType >();
+#ifdef NOLIB
 		std::vector< InputSampleType > inCorePoints;
 
-#ifdef NOLIB
 		if( InCore.set )
 		{
 			InputPointStream *_pointStream;
@@ -455,7 +642,7 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 			typename FEMTree< Dim , Real >::template HasNormalDataFunctor< NormalSigs > hasNormalDataFunctor( *normalInfo );
 			auto hasDataFunctor = [&]( const FEMTreeNode *node ){ return hasNormalDataFunctor( node ); };
 			auto addNodeFunctor = [&]( int d , const int off[Dim] ){ return d<=FullDepth.value; };
-			if( geometryNodeDesignators.size() ) tree.template finalizeForMultigridWithDirichlet< MAX_DEGREE , Degrees::Max() >( BaseDepth.value , addNodeFunctor , hasDataFunctor , [&]( const FEMTreeNode *node ){ return node->nodeData.nodeIndex<(node_index_type)geometryNodeDesignators.size() && geometryNodeDesignators[node]==GeometryNodeType::EXTERIOR; } , std::make_tuple( iInfo ) , std::make_tuple( normalInfo , density , &geometryNodeDesignators ) );
+			if( geometryNodeDesignators.size() ) tree.template finalizeForMultigridWithDirichlet< MAX_DEGREE , Degrees::Max() >( BaseDepth.value , addNodeFunctor , hasDataFunctor , [&]( const FEMTreeNode *node ){ return node->nodeData.nodeIndex<(Index)geometryNodeDesignators.size() && geometryNodeDesignators[node]==GeometryNodeType::EXTERIOR; } , std::make_tuple( iInfo ) , std::make_tuple( normalInfo , density , &geometryNodeDesignators ) );
 			else                                 tree.template finalizeForMultigrid< MAX_DEGREE , Degrees::Max() >( BaseDepth.value , addNodeFunctor , hasDataFunctor , std::make_tuple( iInfo ) , std::make_tuple( normalInfo , density ) );
 #ifdef NOLIB
 			if( geometryNodeDesignators.size() && EnvelopeGrid.set )
@@ -659,21 +846,43 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 		}
 		if( sampleData ){ delete sampleData ; sampleData = NULL; }
 	}
+#else
+    // gradient normals and density
+    typedef Factory< Real , PositionFactory< Real , Dim > , NormalFactory< Real , Dim > , ValueFactory< Real > , AuxDataFactory > VertexFactory;
+    VertexFactory vertexFactory( PositionFactory< Real , Dim >() , NormalFactory< Real , Dim >() , ValueFactory< Real >() , auxDataFactory );
+    auto SetVertex = []( typename VertexFactory::VertexType &v , Point< Real , Dim > p , Point< Real , Dim > g , Real w , InputSampleDataType d ){ v.template get<0>() = p , v.template get<1>() = -g/(1<<Depth.value) , v.template get<2>() = w , v.template get<3>() = d.template get<1>(); };
+    ExtractMesh( UIntPack< FEMSigs ... >() , tree , solution , isoValue , samples , sampleData , density , vertexFactory , inputSampleDataFactory() , SetVertex , comments , unitCubeToModel );
 #endif
 	if( density ) delete density , density = NULL;
 	if( Verbose.set ) std::cout << "#          Total Solve: " << Time()-startTime << " (s), " << MemoryInfo::PeakMemoryUsageMB() << " (MB)" << std::endl;
 }
 };
 
-void entrypoint(){
+template< class Real,typename Index>
+void entrypoint(std::vector<VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>>>> v){
+	static const int Degree = DEFAULT_FEM_DEGREE;
+	static const BoundaryType BType = DEFAULT_FEM_BOUNDARY;
+	typedef IsotropicUIntPack< DEFAULT_DIMENSION , FEMDegreeAndBType< Degree , BType >::Signature > FEMSigs;
+	PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>,5U,5U,5U> lib();
+    // MeshOutputDataStream<typename VertexFactory::VertexType,Index> output();
+    lib.Execute(FEMSigs() , VertexFactory::RGBColorFactory< Real >(),v);
+}
+int main(){
 #ifdef USE_DOUBLE
 	typedef double Real;
 #else // !USE_DOUBLE
 	typedef float  Real;
 #endif // USE_DOUBLE
-	static const int Degree = DEFAULT_FEM_DEGREE;
-	static const BoundaryType BType = DEFAULT_FEM_BOUNDARY;
-	typedef IsotropicUIntPack< DEFAULT_DIMENSION , FEMDegreeAndBType< Degree , BType >::Signature > FEMSigs;
-	PoissonReconLib<Real,VertexFactory::RGBColorFactory< Real>,5U,5U,5U> lib(FEMSigs() , VertexFactory::RGBColorFactory< Real >());
-    // Execute< Real >( FEMSigs() , VertexFactory::RGBColorFactory< Real >());
+	static const int Dim = 3;
+	typedef InputOrientedPointStreamInfo< Real , Dim , typename VertexFactory::RGBColorFactory< Real>::VertexType > InputPointStreamInfo;
+	// The type of the input sample
+	typedef typename InputPointStreamInfo::PointAndDataType InputSampleType;
+	Point<Real,3U> p(0.f,0.f,0.f);
+	VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>> nc(p,p);
+	VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>>> all(p,nc);
+	InputSampleType a(p,nc);
+    std::vector<InputSampleType> v;
+    // auto pointStream = new MemoryInputDataStream< InputSampleType >( v.size() , &v[0] );
+    auto vectorStream = new VectorInputDataStream< InputSampleType >( v );
+    return 0;
 }
