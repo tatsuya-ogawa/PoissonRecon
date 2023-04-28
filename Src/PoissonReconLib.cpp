@@ -13,7 +13,7 @@
 #include "VertexFactory.h"
 #include "Image.h"
 #include "RegularGrid.h"
-
+using namespace VertexFactory;
 template< typename Data >
 class VectorInputDataStream : public InputDataStream< Data >
 {
@@ -121,8 +121,13 @@ class PoissonReconLib{
 	typedef typename InputPointStreamInfo::DataType InputSampleDataType;
 	typedef InputDataStream< InputSampleType >  InputPointStream;
 	typedef TransformedInputDataStream< InputSampleType > XInputPointStream;
+
+    typedef Factory< Real , PositionFactory< Real , Dim > , NormalFactory< Real , Dim > , ValueFactory< Real > , AuxDataFactory > VertexFactory;
 #endif
 	public:
+PoissonReconLib( UIntPack< FEMSigs ... > ){
+
+}
 template< typename VertexFactory ,typename OutputIndex , bool UseCharIndex >
 	void OutputPolygons(const VertexFactory &vFactory , StreamingMesh< typename VertexFactory::VertexType , Index >* mesh ,std::function< void ( typename VertexFactory::VertexType & ) > xForm,MeshOutputDataStream<typename VertexFactory::VertexType,Index>& output)
 	{
@@ -258,7 +263,6 @@ void ExtractMesh
 #endif
 	delete mesh;
 }
-
 void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 {
 #ifdef NOLIB
@@ -270,8 +274,9 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 	static const unsigned int DataSig = FEMDegreeAndBType< DATA_DEGREE , BOUNDARY_FREE >::Signature;
 	typedef typename FEMTree< Dim , Real >::template DensityEstimator< WEIGHT_DEGREE > DensityEstimator;
 	typedef typename FEMTree< Dim , Real >::template InterpolationInfo< Real , 0 > InterpolationInfo;
+#ifdef NOLIB
 	using namespace VertexFactory;
-
+#endif
 	// The factory for constructing an input sample
 	typedef Factory< Real , PositionFactory< Real , Dim > , Factory< Real , NormalFactory< Real , Dim > , AuxDataFactory > > InputSampleFactory;
 
@@ -848,7 +853,7 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 	}
 #else
     // gradient normals and density
-    typedef Factory< Real , PositionFactory< Real , Dim > , NormalFactory< Real , Dim > , ValueFactory< Real > , AuxDataFactory > VertexFactory;
+    // typedef Factory< Real , PositionFactory< Real , Dim > , NormalFactory< Real , Dim > , ValueFactory< Real > , AuxDataFactory > VertexFactory;
     VertexFactory vertexFactory( PositionFactory< Real , Dim >() , NormalFactory< Real , Dim >() , ValueFactory< Real >() , auxDataFactory );
     auto SetVertex = []( typename VertexFactory::VertexType &v , Point< Real , Dim > p , Point< Real , Dim > g , Real w , InputSampleDataType d ){ v.template get<0>() = p , v.template get<1>() = -g/(1<<Depth.value) , v.template get<2>() = w , v.template get<3>() = d.template get<1>(); };
     ExtractMesh( UIntPack< FEMSigs ... >() , tree , solution , isoValue , samples , sampleData , density , vertexFactory , inputSampleDataFactory() , SetVertex , comments , unitCubeToModel );
@@ -863,9 +868,11 @@ void entrypoint(std::vector<VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<
 	static const int Degree = DEFAULT_FEM_DEGREE;
 	static const BoundaryType BType = DEFAULT_FEM_BOUNDARY;
 	typedef IsotropicUIntPack< DEFAULT_DIMENSION , FEMDegreeAndBType< Degree , BType >::Signature > FEMSigs;
-	PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>,5U,5U,5U> lib();
-    // MeshOutputDataStream<typename VertexFactory::VertexType,Index> output();
+	PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>> lib(FEMSigs());
+    MeshOutputDataStream<typename PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>>::VertexFactory::VertexType,Index> output();
     lib.Execute(FEMSigs() , VertexFactory::RGBColorFactory< Real >(),v);
+
+    MeshOutputDataStream<typename PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>,5U,5U,5U>::VertexFactory::VertexType,Index> output();
 }
 int main(){
 #ifdef USE_DOUBLE
