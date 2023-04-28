@@ -1,5 +1,5 @@
 // #include "../Src/PreProcessor.h"
-#include "../Src/PoissonRecon.h"
+#include "../Src/PoissonReconLib.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,18 +15,6 @@
 #include "RegularGrid.h"
 using namespace VertexFactory;
 template< typename Data >
-class VectorInputDataStream : public InputDataStream< Data >
-{
-	const std::vector<Data> _data;
-	size_t _size;
-	size_t _current;
-public:
-	VectorInputDataStream( const std::vector<Data> );
-	~VectorInputDataStream( void );
-	void reset( void );
-	bool next( Data &d );
-};
-template< typename Data >
 VectorInputDataStream< Data >::VectorInputDataStream( const std::vector<Data> data ) : _data(data) , _size(data.size()) , _current(0) {}
 template< typename Data >
 VectorInputDataStream< Data >::~VectorInputDataStream( void ){ ; }
@@ -39,16 +27,6 @@ bool VectorInputDataStream< Data >::next( Data &d )
 	d = _data[_current++];
 	return true;
 }
-template< typename VertexType,typename Index >
-class MeshOutputDataStream {
-    public:
-    virtual ~MeshOutputDataStream(){};
-    void set_vertex_num(size_t num);
-    void set_polygon_num(size_t num);
-    void push_vertex(VertexType& vertex);
-    void push_polygon_indices(std::vector<Index>& indice);
-};
-
 struct ParamBool {
     const bool set=false;
     ParamBool(){
