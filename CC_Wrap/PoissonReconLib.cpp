@@ -1,5 +1,5 @@
 // #include "../Src/PreProcessor.h"
-#include "../Src/PoissonReconLib.h"
+#include "PoissonReconLib.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -841,8 +841,8 @@ void Execute( UIntPack< FEMSigs ... > , const AuxDataFactory &auxDataFactory )
 }
 };
 
-template< class Real,typename Index>
-void entrypoint(std::vector<VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>>>> v){
+template< class Real,unsigned int Dim,typename Index>
+void Reconstruct(std::vector<VectorTypeUnion<Real,Point<Real,Dim>,VectorTypeUnion<Real,Point<Real,Dim>,Point<Real,Dim>>>> v){
 	static const int Degree = DEFAULT_FEM_DEGREE;
 	static const BoundaryType BType = DEFAULT_FEM_BOUNDARY;
 	typedef IsotropicUIntPack< DEFAULT_DIMENSION , FEMDegreeAndBType< Degree , BType >::Signature > FEMSigs;
@@ -851,23 +851,4 @@ void entrypoint(std::vector<VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<
     lib.Execute(FEMSigs() , VertexFactory::RGBColorFactory< Real >(),v);
 
     MeshOutputDataStream<typename PoissonReconLib<Real,node_index_type,VertexFactory::RGBColorFactory< Real>,5U,5U,5U>::VertexFactory::VertexType,Index> output();
-}
-int main(){
-#ifdef USE_DOUBLE
-	typedef double Real;
-#else // !USE_DOUBLE
-	typedef float  Real;
-#endif // USE_DOUBLE
-	static const int Dim = 3;
-	typedef InputOrientedPointStreamInfo< Real , Dim , typename VertexFactory::RGBColorFactory< Real>::VertexType > InputPointStreamInfo;
-	// The type of the input sample
-	typedef typename InputPointStreamInfo::PointAndDataType InputSampleType;
-	Point<Real,3U> p(0.f,0.f,0.f);
-	VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>> nc(p,p);
-	VectorTypeUnion<Real,Point<Real,3U>,VectorTypeUnion<Real,Point<Real,3U>,Point<Real,3U>>> all(p,nc);
-	InputSampleType a(p,nc);
-    std::vector<InputSampleType> v;
-    // auto pointStream = new MemoryInputDataStream< InputSampleType >( v.size() , &v[0] );
-    auto vectorStream = new VectorInputDataStream< InputSampleType >( v );
-    return 0;
 }

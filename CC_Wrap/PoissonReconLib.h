@@ -26,9 +26,8 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF S
 DAMAGE.
 */
 
-#ifndef POISSON_RECON_INCLUDED
-#define POISSON_RECON_INCLUDED
-
+#ifndef POISSON_RECON_LIB_INCLUDED
+#define POISSON_RECON_LIB_INCLUDED
 #include "FEMTree.h"
 #include "VertexFactory.h"
 
@@ -109,8 +108,6 @@ XForm< Real , Dim+1 > GetPointXForm( InputOrientedPointStream< Real , Dim , AuxD
 	InputOrientedPointStreamInfo< Real , Dim , AuxData >::BoundingBox( stream , d , min , max );
 	return GetBoundingBoxXForm( min , max , scaleFactor );
 }
-
-
 template< typename Data >
 class VectorInputDataStream : public InputDataStream< Data >
 {
@@ -133,4 +130,6 @@ class MeshOutputDataStream {
     void push_vertex(VertexType& vertex);
     void push_polygon_indices(std::vector<Index>& indice);
 };
+template< class Real,unsigned int Dim,typename Index>
+void Reconstruct(std::vector<VectorTypeUnion<Real,Point<Real,Dim>,VectorTypeUnion<Real,Point<Real,Dim>,Point<Real,Dim>>>>);
 #endif // POISSON_RECON_INCLUDED
